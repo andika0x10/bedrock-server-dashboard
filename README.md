@@ -1,4 +1,4 @@
-# Minecraft Bedrock Dashboard
+# Minecraft Bedrock Server Dashboard
 
 ![Home](images/home.png)
 
