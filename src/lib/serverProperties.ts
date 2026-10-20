@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { isIP } from "node:net";
 import { SERVER_PROPERTIES_PATH } from "./paths";
 
 const editableKeys = [
@@ -11,6 +12,9 @@ const editableKeys = [
   "allow-list",
   "server-port",
   "server-portv6",
+  "transport",
+  "server-ip",
+  "server-udp-ports",
   "enable-lan-visibility",
   "view-distance",
   "tick-distance",
@@ -48,7 +52,7 @@ function parse(content: string): ParsedProperties {
 
     const key = line.slice(0, separatorIndex).trim();
     const value = line.slice(separatorIndex + 1).trim();
-    values[key] = value;
+    values[key] = key === "server-udp-ports" && values[key] ? `${values[key]},${value}` : value;
   }
 
   return { lines, values };
@@ -89,6 +93,11 @@ function validateSettings(input: Partial<ServerSettings>) {
   };
 
   oneOf("gamemode", ["survival", "creative", "adventure"]);
+  oneOf("transport", ["nethernet", "raknet"]);
+  if (input["server-ip"] && !isIP(input["server-ip"])) errors.push("server-ip harus alamat IPv4/IPv6 atau kosong.");
+  if (input["server-udp-ports"] && !validUdpPorts(input["server-udp-ports"])) {
+    errors.push("server-udp-ports maksimal 16 entri port/rentang atau [IP:]port-eksternal:port-internal dengan panjang rentang sama.");
+  }
   oneOf("difficulty", ["peaceful", "easy", "normal", "hard"]);
   oneOf("default-player-permission-level", ["visitor", "member", "operator"]);
   boolString("allow-cheats");
@@ -124,7 +133,7 @@ export async function readServerSettings() {
 
   const settings = {} as ServerSettings;
   for (const key of editableKeys) {
-    settings[key] = parsed.values[key] ?? "";
+    settings[key] = parsed.values[key] ?? (key === "transport" ? "nethernet" : "");
   }
 
   return settings;
@@ -159,7 +168,8 @@ export async function updateServerSettings(patch: Partial<ServerSettings>) {
       continue;
     }
 
-    lines[i] = `${key}=${value}`;
+    // Omit an empty bind address so BDS uses its native interface default.
+    lines[i] = (key === "server-ip" && value === "") || (key === "server-udp-ports" && touched.has(key)) ? "" : `${key}=${value}`;
     touched.add(key);
   }
 
@@ -168,6 +178,7 @@ export async function updateServerSettings(patch: Partial<ServerSettings>) {
     if (value === undefined || touched.has(key)) {
       continue;
     }
+    if (key === "server-ip" && value === "") continue;
     lines.push(`${key}=${value}`);
   }
 
@@ -176,3 +187,22 @@ export async function updateServerSettings(patch: Partial<ServerSettings>) {
 }
 
 export const settingKeys = editableKeys;
+
+function validUdpPorts(value: string) {
+  if (value.split(",").length > 16) return false;
+  const range = (raw: string) => {
+    if (!/^\d+(?:-\d+)?$/.test(raw)) return null;
+    const [start, end = start] = raw.split("-").map(Number);
+    return start >= 1 && end <= 65535 && start <= end ? end - start : null;
+  };
+  return value.split(",").every((entry) => {
+    const match = entry.trim().match(/^(?:\[([^\]]+)\]:|([^:]+):)?([^:]+):([^:]+)$/);
+    if (!match) return range(entry.trim()) !== null;
+    const [, ipv6, prefix, external, internal] = match;
+    if (ipv6 && isIP(ipv6) !== 6) return false;
+    if (prefix && isIP(prefix) !== 4) return false;
+    const externalSize = range(external),
+      internalSize = range(internal);
+    return externalSize !== null && internalSize !== null && externalSize === internalSize;
+  });
+}

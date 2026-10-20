@@ -19,8 +19,16 @@ const groups = [
       { key: "allow-list", label: "Batasi ke daftar pemain", options: ["true", "false"], hint: 'Tambahkan pemain melalui konsol: allowlist add "Gamertag".' },
       { key: "default-player-permission-level", label: "Izin pemain baru", options: ["visitor", "member", "operator"] },
       { key: "enable-lan-visibility", label: "Tampilkan di jaringan lokal", options: ["true", "false"] },
-      { key: "server-port", label: "Port game IPv4 (UDP)", type: "number", min: 1, max: 65535 },
-      { key: "server-portv6", label: "Port game IPv6 (UDP)", type: "number", min: 1, max: 65535 },
+      { key: "transport", label: "Protokol koneksi", options: ["nethernet", "raknet"], hint: "NetherNet menggunakan TCP untuk koneksi awal dan UDP untuk permainan." },
+      { key: "server-port", label: "Port server", type: "number", min: 1, max: 65535, hint: "NetherNet: TCP. RakNet: UDP IPv4. Default 19132." },
+      { key: "server-portv6", label: "Port IPv6 RakNet (UDP)", type: "number", min: 1, max: 65535, hint: "Diabaikan oleh NetherNet; IPv4 dan IPv6 memakai port server yang sama." },
+      { key: "server-ip", label: "IP lokal NetherNet", optional: true, hint: "Kosong untuk semua interface. Isi IP lokal host, bukan IP publik NAT." },
+      {
+        key: "server-udp-ports",
+        label: "Port UDP NetherNet",
+        optional: true,
+        hint: "Contoh: 19140-19159. Di belakang NAT: IP-PUBLIK:19140-19159:19140-19159. Buka rentang UDP ini di firewall/router. Kosong memakai port dinamis.",
+      },
     ],
   },
   {
@@ -63,7 +71,7 @@ const groups = [
                       type={"type" in field ? (field.type === "number" ? "number" : "text") : "text"}
                       min={"min" in field ? field.min : undefined}
                       max={"max" in field ? field.max : undefined}
-                      required
+                      required={!("optional" in field && field.optional)}
                       disabled
                     />
                   )}

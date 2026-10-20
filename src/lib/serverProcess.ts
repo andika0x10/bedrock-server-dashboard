@@ -1,7 +1,8 @@
-import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import { BEDROCK_BINARY, BEDROCK_DIR } from "./paths";
 import { ingestPlayerLogLine } from "./playerStats";
+import { readServerSettings } from "./serverProperties";
 
 type ServerState = {
   process: ChildProcessWithoutNullStreams | null;
@@ -150,7 +151,42 @@ export function getServerLogs(limit = 200) {
   return ["Belum ada log server. Jalankan server dari dashboard untuk melihat log live."];
 }
 
-export async function startServer() {
+let startInProgress: Promise<ReturnType<typeof getServerStatus>> | null = null;
+
+export function startServer() {
+  if (!startInProgress) {
+    startInProgress = startServerProcess().finally(() => {
+      startInProgress = null;
+    });
+  }
+  return startInProgress;
+}
+
+async function waitForNetherNetPort() {
+  const settings = await readServerSettings();
+  if (settings.transport !== "nethernet") return;
+  const port = Number(settings["server-port"] || "19132");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("server-port tidak valid.");
+  const deadline = Date.now() + 65000;
+  let notified = false;
+  while (true) {
+    let pending: string;
+    try {
+      pending = execFileSync("ss", ["-Htan", "state", "time-wait", `( sport = :${port} )`], { encoding: "utf-8", timeout: 2000 });
+    } catch {
+      return; // Socket inspection is optional on hosts without Linux ss.
+    }
+    if (!pending.trim()) return;
+    if (Date.now() >= deadline) throw new Error(`Port TCP ${port} masih TIME_WAIT. Coba nyalakan server lagi.`);
+    if (!notified) {
+      pushLog(`Menunggu koneksi TCP ${port} lama selesai (TIME_WAIT) sebelum memulai NetherNet…`);
+      notified = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+async function startServerProcess() {
   const status = getServerStatus();
   const managedRunning = Boolean(state.process && state.process.pid && !state.process.killed && state.process.exitCode === null);
   if (managedRunning) {
@@ -165,6 +201,7 @@ export async function startServer() {
   }
 
   ensureBinaryExists();
+  await waitForNetherNetPort();
 
   const proc = spawn("./bedrock_server", {
     cwd: BEDROCK_DIR,

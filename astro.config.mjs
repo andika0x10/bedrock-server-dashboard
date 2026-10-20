@@ -6,6 +6,18 @@ import tailwindcss from "@tailwindcss/vite";
 
 import node from "@astrojs/node";
 
+const adapter = node({ mode: "standalone" });
+const configureNode = adapter.hooks["astro:config:done"];
+adapter.hooks["astro:config:done"] = (/** @type {Parameters<NonNullable<import('astro').AstroIntegration['hooks']['astro:config:done']>>[0]} */ context) =>
+  configureNode?.({
+    ...context,
+    setAdapter: (nodeAdapter) =>
+      context.setAdapter({
+        ...nodeAdapter,
+        serverEntrypoint: new URL("./src/server-entry.mjs", import.meta.url).pathname,
+      }),
+  });
+
 const logger = createLogger();
 const originalWarn = logger.warn;
 
@@ -48,7 +60,5 @@ export default defineConfig({
     plugins: [tailwindcss()],
   },
 
-  adapter: node({
-    mode: "standalone",
-  }),
+  adapter,
 });

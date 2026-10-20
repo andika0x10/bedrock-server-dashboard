@@ -40,7 +40,11 @@ before(async () => {
   );
   await writeFile(path.join(fixture, "bedrock-server", "worlds", "original", "level.dat"), "test world data");
   // Stub process discovery. No test can take over a real server on this host.
-  await writeFile(path.join(fixture, "bin", "ss"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  await writeFile(
+    path.join(fixture, "bin", "ss"),
+    '#!/bin/sh\nif [ "$1" = "-Htan" ] && [ -e timewait.marker ]; then\n rm timewait.marker\n echo "0 0 127.0.0.1:29132 127.0.0.1:12345"\nfi\nexit 0\n',
+    { mode: 0o755 }
+  );
   await writeFile(
     path.join(fixture, "bedrock-server", "bedrock_server"),
     '#!/bin/sh\nprintf "Server started.\\n"\nwhile IFS= read -r cmd; do\n if [ "$cmd" = "stop" ]; then exit 0; fi\n printf "%s\\n" "$cmd"\ndone\n',
@@ -96,6 +100,10 @@ after(async () => {
 test("API requires authentication", async () => {
   assert.equal((await fetch(origin + "/api/overview")).status, 401);
 });
+test("Bedrock starts with the dashboard and can be stopped manually", async () => {
+  assert.equal((await (await request("/api/server/status")).json()).status.running, true);
+  assert.equal((await json("/api/server/control", "POST", { action: "stop" })).status, 200);
+});
 test("overview returns live settings, metrics and world state", async () => {
   const response = await request("/api/overview");
   assert.equal(response.status, 200);
@@ -113,6 +121,37 @@ test("settings reject newline injection, non-string values and unknown keys", as
     assert.equal((await json("/api/settings", "PUT", payload)).status, 400);
   const data = await (await request("/api/settings")).json();
   assert.equal(data.settings["server-name"], "Test server");
+});
+test("NetherNet settings validate IP addresses and UDP mappings", async () => {
+  for (const payload of [
+    { transport: "invalid" },
+    { "server-ip": "example.org" },
+    { "server-udp-ports": Array.from({ length: 17 }, (_, i) => String(19140 + i)).join(",") },
+    ...["0", "65536", "100-90", "19140-19159:32000-32001", "example.org:19140:19140", "[invalid]:19140:19140", "19140,", "1:2:3:4"].map((value) => ({ "server-udp-ports": value })),
+  ])
+    assert.equal((await json("/api/settings", "PUT", payload)).status, 400, JSON.stringify(payload));
+  for (const value of [
+    "",
+    "19140-19159",
+    "19140:32000",
+    "203.0.113.10:19140-19159:32000-32019",
+    Array.from({ length: 16 }, (_, i) => `203.0.113.10:${19140 + i}:${19140 + i}`).join(","),
+    "[2001:db8::1]:19140:32000,32001",
+  ]) {
+    const payload = { transport: "nethernet", "server-ip": "", "server-udp-ports": value };
+    assert.equal((await json("/api/settings", "PUT", payload)).status, 200, value);
+    assert.equal((await (await request("/api/settings")).json()).settings["server-udp-ports"], value);
+  }
+});
+test("repeated UDP settings are read cumulatively and replaced once", async () => {
+  const file = path.join(fixture, "bedrock-server/server.properties");
+  await writeFile(file, (await readFile(file, "utf8")) + "\nserver-udp-ports=32002\n");
+  assert.equal((await (await request("/api/settings")).json()).settings["server-udp-ports"], "[2001:db8::1]:19140:32000,32001,32002");
+  assert.equal((await json("/api/settings", "PUT", { "server-udp-ports": "19140-19159" })).status, 200);
+  assert.equal((await readFile(file, "utf8")).match(/^server-udp-ports=/gm).length, 1);
+  assert.equal((await json("/api/settings", "PUT", { "server-ip": "0.0.0.0" })).status, 200);
+  assert.equal((await json("/api/settings", "PUT", { "server-ip": "" })).status, 200);
+  assert.doesNotMatch(await readFile(file, "utf8"), /^server-ip=/m);
 });
 test("world paths cannot traverse the world directory", async () => {
   for (const name of ["../escape", "..", "a/b", "bad\nname"]) {
@@ -168,6 +207,19 @@ test("global addon toggles and is included in world export", async () => {
   assert.deepEqual(refs[0].version, [1, 0, 0]);
   assert.ok(zipExport.getEntries().some((entry) => entry.entryName.startsWith("resource_packs/") && entry.entryName.endsWith("manifest.json")));
 });
+test("concurrent starts wait for old TCP connections and share one child", async () => {
+  await writeFile(path.join(fixture, "timewait.marker"), "pending");
+  const responses = await Promise.all([json("/api/server/control", "POST", { action: "start" }), json("/api/server/control", "POST", { action: "start" })]);
+  const statuses = await Promise.all(
+    responses.map(async (response) => {
+      assert.equal(response.status, 200);
+      return (await response.json()).status;
+    })
+  );
+  assert.equal(statuses[0].pid, statuses[1].pid);
+  assert.ok((await (await request("/api/server/logs")).json()).logs.some((line) => line.includes("TIME_WAIT")));
+  assert.equal((await json("/api/server/control", "POST", { action: "stop" })).status, 200);
+});
 test("running server blocks world changes, exports and addon mutations", async () => {
   assert.equal((await json("/api/server/control", "POST", { action: "start" })).status, 200);
   for (const [url, method, payload] of [
@@ -186,4 +238,13 @@ test("world switching and deletion work after server stops", async () => {
   assert.equal((await json("/api/worlds", "DELETE", { worldName: "imported" })).status, 200);
   const data = await (await request("/api/worlds")).json();
   assert.ok(!data.worlds.some((w) => w.name === "imported"));
+});
+test("dashboard shutdown gracefully stops its Bedrock child", async () => {
+  const response = await json("/api/server/control", "POST", { action: "start" });
+  const { status } = await response.json();
+  assert.equal(status.running, true);
+  const exited = once(processHandle, "exit");
+  processHandle.kill("SIGTERM");
+  await exited;
+  assert.throws(() => process.kill(status.pid, 0), { code: "ESRCH" });
 });
