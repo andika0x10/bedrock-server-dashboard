@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import AdmZip from "adm-zip";
 import { BEHAVIOR_PACKS_DIR, RESOURCE_PACKS_DIR, WORLDS_DIR } from "./paths";
-import { readServerSettings, updateServerSettings } from "./serverProperties";
+import { getServerStatus } from "./serverProcess";
+import { readServerSettings, updateServerSettings, type ServerSettings } from "./serverProperties";
 
 type PackType = "resource" | "behavior";
 
@@ -185,6 +186,55 @@ async function moveDirectory(source: string, destination: string) {
   }
 }
 
+export function requireStoppedServer() {
+  if (getServerStatus().running) throw new Error("Hentikan server melalui konsol sebelum mengubah world atau addon.");
+}
+
+function worldPath(worldName: string) {
+  if (typeof worldName !== "string" || !worldName.trim() || worldName === "." || worldName === ".." || /[\\/:*?"<>|\r\n\0]/.test(worldName))
+    throw new Error("Nama world tidak valid.");
+  return path.join(WORLDS_DIR, worldName);
+}
+
+export async function createWorld(settings: Partial<ServerSettings>) {
+  requireStoppedServer();
+  const name = settings["level-name"] ?? "";
+  const target = worldPath(name);
+  await ensureDir(WORLDS_DIR);
+  try {
+    await fs.mkdir(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("Nama world sudah digunakan. Pilih nama lain.");
+    throw error;
+  }
+  try {
+    await updateServerSettings(settings);
+  } catch (error) {
+    await fs.rmdir(target);
+    throw error;
+  }
+  return listWorlds();
+}
+
+export async function exportWorld(worldName: string) {
+  requireStoppedServer();
+  const target = worldPath(worldName);
+  if (!(await exists(path.join(target, "level.dat")))) throw new Error("World belum memiliki data. Nyalakan lalu hentikan server untuk membuatnya.");
+  const zip = new AdmZip();
+  zip.addLocalFolder(target);
+  // Include custom global packs referenced by this world so the export is portable.
+  for (const type of ["resource", "behavior"] as const) {
+    const refsPath = path.join(target, `world_${type}_packs.json`);
+    if (!(await exists(refsPath))) continue;
+    const refs = JSON.parse(await fs.readFile(refsPath, "utf-8"));
+    for (const ref of refs) {
+      const found = await findPackFolderById(type, ref.pack_id);
+      if (found && !isDefaultBedrockFolder(type, found.folder)) zip.addLocalFolder(found.folderPath, `${type}_packs/${found.folder}`);
+    }
+  }
+  return zip.toBuffer();
+}
+
 async function getActiveWorldName() {
   const settings = await readServerSettings();
   return settings["level-name"];
@@ -192,9 +242,9 @@ async function getActiveWorldName() {
 
 async function getWorldPackFilePath(type: PackType) {
   const activeWorldName = await getActiveWorldName();
-  const worldPath = path.join(WORLDS_DIR, activeWorldName);
+  const activeWorldPath = worldPath(activeWorldName);
   const fileName = type === "behavior" ? "world_behavior_packs.json" : "world_resource_packs.json";
-  return path.join(worldPath, fileName);
+  return path.join(activeWorldPath, fileName);
 }
 
 async function readWorldPackRefs(type: PackType) {
@@ -214,6 +264,7 @@ async function readWorldPackRefs(type: PackType) {
 
 async function writeWorldPackRefs(type: PackType, refs: Array<{ pack_id: string; version: [number, number, number] }>) {
   const filePath = await getWorldPackFilePath(type);
+  await ensureDir(path.dirname(filePath));
   await fs.writeFile(filePath, `${JSON.stringify(refs, null, 2)}\n`, "utf-8");
 }
 
@@ -234,8 +285,9 @@ export async function listWorlds(): Promise<WorldSummary[]> {
 }
 
 export async function activateWorld(worldName: string) {
+  requireStoppedServer();
   await ensureDir(WORLDS_DIR);
-  const target = path.join(WORLDS_DIR, worldName);
+  const target = worldPath(worldName);
   if (!(await exists(target))) {
     throw new Error("World tidak ditemukan.");
   }
@@ -245,12 +297,13 @@ export async function activateWorld(worldName: string) {
 }
 
 export async function deleteWorld(worldName: string) {
+  requireStoppedServer();
   const activeWorld = await getActiveWorldName();
   if (worldName === activeWorld) {
     throw new Error("World aktif tidak bisa dihapus. Pilih world lain sebagai aktif terlebih dahulu.");
   }
 
-  const target = path.join(WORLDS_DIR, worldName);
+  const target = worldPath(worldName);
   if (!(await exists(target))) {
     throw new Error("World tidak ditemukan.");
   }
@@ -267,7 +320,7 @@ export async function uploadWorld(file: File) {
   await ensureDir(WORLDS_DIR);
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mbd-world-"));
-  const zipPath = path.join(tempDir, file.name);
+  const zipPath = path.join(tempDir, "upload.zip");
   const bytes = Buffer.from(await file.arrayBuffer());
   await fs.writeFile(zipPath, bytes);
 
@@ -278,10 +331,7 @@ export async function uploadWorld(file: File) {
     const zip = new AdmZip(zipPath);
     zip.extractAllTo(extractDir, true);
 
-    const manifestFolders = await findManifestFolders(extractDir);
-    const worldFolder = manifestFolders.length > 0 ? path.dirname(manifestFolders[0]) : extractDir;
-
-    const candidates = await findLevelDatCandidates(worldFolder);
+    const candidates = await findLevelDatCandidates(extractDir);
     if (candidates.length === 0) {
       throw new Error("Isi .mcworld tidak valid.");
     }
@@ -371,6 +421,11 @@ export async function listPacks() {
 }
 
 export async function setPackEnabled(type: PackType, packId: string, version: string, enabled: boolean) {
+  requireStoppedServer();
+  if (type !== "resource" && type !== "behavior") throw new Error("Jenis addon tidak valid.");
+  const found = await findPackFolderById(type, packId);
+  if (!found) throw new Error("Addon tidak ditemukan.");
+  version = found.info.version;
   const refs = await readWorldPackRefs(type);
   const existingIndex = refs.findIndex((item) => item.pack_id === packId);
 
@@ -409,6 +464,8 @@ async function findPackFolderById(type: PackType, packId: string) {
 }
 
 export async function deletePack(type: PackType, packId: string) {
+  requireStoppedServer();
+  if (type !== "resource" && type !== "behavior") throw new Error("Jenis addon tidak valid.");
   const found = await findPackFolderById(type, packId);
   if (!found) {
     throw new Error("Addon tidak ditemukan.");
@@ -423,13 +480,14 @@ export async function deletePack(type: PackType, packId: string) {
 }
 
 export async function uploadPack(file: File) {
+  requireStoppedServer();
   const lower = file.name.toLowerCase();
   if (!lower.endsWith(".mcpack") && !lower.endsWith(".mcaddon")) {
     throw new Error("File addon harus .mcpack atau .mcaddon");
   }
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mbd-pack-"));
-  const zipPath = path.join(tempDir, file.name);
+  const zipPath = path.join(tempDir, "upload.zip");
   await fs.writeFile(zipPath, Buffer.from(await file.arrayBuffer()));
 
   const extractDir = path.join(tempDir, "extract");

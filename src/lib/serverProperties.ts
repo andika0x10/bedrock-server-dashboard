@@ -56,6 +56,12 @@ function parse(content: string): ParsedProperties {
 
 function validateSettings(input: Partial<ServerSettings>) {
   const errors: string[] = [];
+  if (!input || typeof input !== "object" || Array.isArray(input)) return ["Pengaturan harus berupa objek."];
+  for (const [key, value] of Object.entries(input)) {
+    if (!(editableKeys as readonly string[]).includes(key)) errors.push(`Pengaturan tidak dikenal: ${key}`);
+    if (typeof value !== "string" || /[\r\n\0]/.test(value)) errors.push(`${key} harus berupa teks satu baris.`);
+  }
+  if (errors.length) return errors;
 
   const integerInRange = (key: EditableKey, min: number, max: number) => {
     const raw = input[key];
@@ -105,7 +111,7 @@ function validateSettings(input: Partial<ServerSettings>) {
   }
 
   const levelName = input["level-name"];
-  if (levelName !== undefined && /[\\/:*?"<>|]/.test(levelName)) {
+  if (levelName !== undefined && (!levelName.trim() || levelName === "." || levelName === ".." || /[\\/:*?"<>|]/.test(levelName))) {
     errors.push("level-name mengandung karakter tidak valid");
   }
 

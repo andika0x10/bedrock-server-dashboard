@@ -1,173 +1,123 @@
 ---
 import DashboardShell from "../../components/DashboardShell.astro";
+import Icon from "../../components/Icon.astro";
 ---
 
-<DashboardShell title="Kelola World | Bedrock Dashboard" activePath="/dashboard/worlds">
-  <section class="space-y-6">
-    <div id="feedback" class="hidden rounded-xl border border-[#2A2A2A] bg-[#1A1A1A] px-4 py-3 text-sm"></div>
-
-    <article class="rounded-2xl border border-[#2A2A2A] bg-[#1A1A1A] p-5 sm:p-6">
-      <h2 class="text-lg font-semibold text-[#FFFFFF]">Upload World</h2>
-      <p class="mt-1 text-sm text-[#A0A0A0]">Format yang didukung: .mcworld</p>
-
-      <form id="world-upload-form" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <input
-          id="world-file"
-          type="file"
-          accept=".mcworld"
-          class="w-full min-w-0 flex-1 rounded-xl border border-[#2A2A2A] bg-[#0A0A0A] px-3 py-3 text-sm text-[#A0A0A0] file:mr-3 file:rounded-lg file:border-0 file:bg-[#2A2A2A] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#F5F5F5]"
-        />
-        <button
-          type="submit"
-          class="h-12 shrink-0 whitespace-nowrap rounded-xl bg-[#F5F0E8] px-5 text-sm font-semibold text-[#0A0A0A] transition hover:bg-[#E8E0D0] sm:min-w-[9.5rem]"
-          >Upload World</button
-        >
-      </form>
-    </article>
-
-    <article class="rounded-2xl border border-[#2A2A2A] bg-[#1A1A1A] p-5 sm:p-6">
-      <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-[#666666]">Daftar World</h3>
-      <div class="mt-4 overflow-x-auto rounded-xl border border-[#2A2A2A]">
-        <table class="min-w-full divide-y divide-[#2A2A2A] text-left text-sm">
-          <thead class="bg-[#111111] text-[#A0A0A0]">
-            <tr>
-              <th class="px-4 py-3">Nama World</th>
-              <th class="px-4 py-3">Status</th>
-              <th class="px-4 py-3">Aksi</th>
-            </tr>
-          </thead>
-          <tbody id="world-table-body" class="divide-y divide-[#2A2A2A] bg-[#0A0A0A]"></tbody>
-        </table>
-      </div>
-    </article>
-  </section>
-
+<DashboardShell title="World | Bedrock Dashboard" activePath="/dashboard/worlds">
+  <div id="feedback" class="hidden" role="status" aria-live="polite"></div>
+  <div class="section-action">
+    <p>Setiap world menyimpan petualangan dan addon-nya sendiri.</p><a href="/dashboard/setup" class="btn btn-primary"><Icon name="plus" size={15} />World baru</a>
+  </div>
+  <div class="notice">
+    Hentikan server sebelum mengganti, menghapus, atau mengunduh world. Nyalakan kembali untuk memainkan world yang dipilih. Unduhan .mcworld adalah cadangan manual.
+  </div>
+  <article class="panel mb-5">
+    <div class="panel-heading"><h2>Impor world milikmu</h2><span class="muted text-xs">.mcworld</span></div><form
+      id="world-upload-form"
+      class="flex flex-col gap-3 sm:flex-row sm:items-center"
+    >
+      <label class="sr-only" for="world-file">Pilih file world</label><input
+        id="world-file"
+        type="file"
+        accept=".mcworld"
+        required
+        class="w-full min-w-0 rounded-lg border border-[#E5E6EF] bg-[#FBFBFD] p-3 text-xs file:mr-3 file:rounded file:border-0 file:bg-[#EEE8F8] file:px-3 file:py-2 file:text-[#7154C7]"
+      /><button type="submit" class="btn">Impor world</button>
+    </form>
+  </article>
+  <article class="panel">
+    <div class="panel-heading"><h2>Koleksi world</h2><span id="world-count" class="muted text-xs">Memuat…</span></div><div id="world-list" class="world-list">
+      <p class="empty-state">Memuat world tersimpan…</p>
+    </div>
+  </article>
   <script>
-    const feedback = document.getElementById("feedback");
-    const worldTableBody = document.getElementById("world-table-body");
-
-    type FeedbackType = "info" | "success" | "error";
-    type WorldItem = { name: string; active: boolean };
-
-    function showFeedback(message: string, type: FeedbackType = "info") {
-      if (!(feedback instanceof HTMLElement)) {
-        return;
-      }
-      feedback.classList.remove("hidden", "text-[#A0A0A0]", "text-[#ff9e9e]", "text-[#F5F0E8]");
-      feedback.classList.add(type === "error" ? "text-[#ff9e9e]" : type === "success" ? "text-[#F5F0E8]" : "text-[#A0A0A0]");
-      feedback.textContent = message;
+    import { api, escapeHtml, feedback } from "../../lib/client";
+    type World = { name: string; active: boolean };
+    const list = document.getElementById("world-list");
+    let busy = false;
+    function render(worlds: World[]) {
+      const count = document.getElementById("world-count");
+      if (count) count.textContent = `${worlds.length} world`;
+      if (!list) return;
+      list.innerHTML = worlds.length ? "" : '<p class="empty-state">Belum ada world. Pilih World baru atau impor file .mcworld untuk memulai.</p>';
+      worlds.forEach((world) => {
+        const row = document.createElement("div");
+        row.className = "world-item";
+        row.innerHTML = `<span class="world-thumbnail" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 30 30"><path fill="#85a66c" d="m15 2 13 7-13 7L2 9z"/><path fill="#b09478" d="M2 9v12l13 7V16z"/><path fill="#8b725d" d="M15 16v12l13-7V9z"/></svg></span><div class="world-info"><strong>${escapeHtml(world.name)}</strong><small>${world.active ? "World yang dipilih untuk server" : "World tersimpan"}</small></div>${world.active ? '<span class="world-active">Dipilih</span>' : ""}<div class="world-actions"><button data-action="export" class="btn btn-small">Unduh .mcworld</button><button data-action="activate" class="btn btn-small" ${world.active ? "disabled" : ""}>${world.active ? "World aktif" : "Aktifkan"}</button><button data-action="delete" class="btn btn-small" ${world.active ? "disabled" : ""}>Hapus</button></div>`;
+        row.querySelectorAll<HTMLButtonElement>("button").forEach((button) =>
+          button.addEventListener("click", async () => {
+            if (busy) return;
+            const action = button.dataset.action;
+            if (action === "delete" && !confirm(`Hapus world “${world.name}” secara permanen? Unduh cadangan terlebih dahulu.`)) return;
+            busy = true;
+            button.disabled = true;
+            try {
+              if (action === "export") {
+                feedback("Menyiapkan unduhan world…");
+                const response = await fetch(`/api/worlds/export?name=${encodeURIComponent(world.name)}`);
+                if (!response.ok) {
+                  const data = await response.json();
+                  throw new Error(data.message || "Unduhan gagal.");
+                }
+                const blob = await response.blob(),
+                  url = URL.createObjectURL(blob),
+                  link = document.createElement("a");
+                link.href = url;
+                link.download = `${world.name}.mcworld`;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 30000);
+                feedback("World berhasil diunduh. Simpan cadangan di tempat yang aman.", "success");
+              } else {
+                const result = await api<{ worlds: World[] }>("/api/worlds", {
+                  method: action === "delete" ? "DELETE" : "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ worldName: world.name }),
+                });
+                render(result.worlds);
+                feedback(action === "delete" ? "World dihapus." : "World dipilih. Nyalakan server untuk memainkannya.", "success");
+              }
+            } catch (error) {
+              feedback(error instanceof Error ? error.message : "Aksi gagal.", "error");
+            } finally {
+              busy = false;
+              if (action === "export" || !world.active) button.disabled = false;
+            }
+          })
+        );
+        list.appendChild(row);
+      });
     }
-
-    async function api<T>(url: string, options: RequestInit = {}): Promise<T> {
-      const response = await fetch(url, options);
-      const data = (await response.json()) as { message?: string } & T;
-      if (!response.ok) {
-        throw new Error(data.message || "Request gagal");
-      }
-      return data;
+    async function load() {
+      const data = await api<{ worlds: World[] }>("/api/worlds");
+      render(data.worlds);
     }
-
-    function renderWorlds(worlds: WorldItem[]) {
-      if (!(worldTableBody instanceof HTMLElement)) {
-        return;
-      }
-      worldTableBody.innerHTML = "";
-
-      if (!worlds.length) {
-        worldTableBody.innerHTML = '<tr><td colspan="3" class="px-4 py-4 text-center text-[#666666]">Belum ada world.</td></tr>';
-        return;
-      }
-
-      for (const world of worlds) {
-        const row = document.createElement("tr");
-        row.className = "text-[#F5F5F5]";
-
-        const activateDisabled = world.active ? "disabled" : "";
-        const activateClass = world.active
-          ? "rounded-lg border border-[#2A2A2A] bg-[#1A1A1A] px-3 py-1 text-xs font-semibold text-[#666666]"
-          : "rounded-lg bg-[#F5F0E8] px-3 py-1 text-xs font-semibold text-[#0A0A0A] transition hover:bg-[#E8E0D0]";
-
-        row.innerHTML = `
-          <td class="px-4 py-3">${world.name}</td>
-          <td class="px-4 py-3">${world.active ? "Aktif" : "Nonaktif"}</td>
-          <td class="px-4 py-3">
-            <div class="flex flex-wrap gap-2">
-              <button data-action="activate" data-world="${world.name}" ${activateDisabled} class="${activateClass}">${world.active ? "Sedang Aktif" : "Pilih Jadi Aktif"}</button>
-              <button data-action="delete" data-world="${world.name}" class="rounded-lg border border-[#444444] bg-[#2A2A2A] px-3 py-1 text-xs font-semibold text-[#F5F5F5] transition hover:bg-[#444444]">Hapus</button>
-            </div>
-          </td>
-        `;
-
-        row.querySelector('[data-action="activate"]')?.addEventListener("click", async () => {
-          try {
-            showFeedback("Mengaktifkan world...");
-            const data = await api<{ worlds: WorldItem[] }>("/api/worlds", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ worldName: world.name }),
-            });
-            renderWorlds(data.worlds);
-            showFeedback("World aktif berhasil diubah.", "success");
-          } catch (error) {
-            showFeedback(error instanceof Error ? error.message : "Request gagal", "error");
-          }
-        });
-
-        row.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
-          if (!window.confirm(`Hapus world ${world.name}?`)) {
-            return;
-          }
-
-          try {
-            showFeedback("Menghapus world...");
-            const data = await api<{ worlds: WorldItem[] }>("/api/worlds", {
-              method: "DELETE",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ worldName: world.name }),
-            });
-            renderWorlds(data.worlds);
-            showFeedback("World berhasil dihapus.", "success");
-          } catch (error) {
-            showFeedback(error instanceof Error ? error.message : "Request gagal", "error");
-          }
-        });
-
-        worldTableBody.appendChild(row);
-      }
-    }
-
-    async function loadWorlds() {
-      const data = await api<{ worlds: WorldItem[] }>("/api/worlds");
-      renderWorlds(data.worlds);
-    }
-
-    document.getElementById("world-upload-form")?.addEventListener("submit", async (event) => {
+    document.querySelector<HTMLFormElement>("#world-upload-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const input = document.getElementById("world-file");
-      if (!(input instanceof HTMLInputElement) || !input.files || !input.files[0]) {
-        showFeedback("Pilih file .mcworld terlebih dahulu.", "error");
-        return;
-      }
-
-      const form = new FormData();
-      form.append("file", input.files[0]);
-
+      const input = document.querySelector<HTMLInputElement>("#world-file"),
+        button = (event.currentTarget as HTMLFormElement).querySelector("button");
+      if (!input?.files?.[0] || busy) return;
+      busy = true;
+      if (button) button.disabled = true;
       try {
-        showFeedback("Mengupload world...");
-        await api<{ ok: boolean }>("/api/worlds", {
-          method: "POST",
-          body: form,
-        });
+        const form = new FormData();
+        form.append("file", input.files[0]);
+        feedback("Mengimpor world…");
+        await api("/api/worlds", { method: "POST", body: form });
         input.value = "";
-        await loadWorlds();
-        showFeedback("Upload world berhasil.", "success");
+        await load();
+        feedback("World diimpor. Hentikan server lalu aktifkan untuk bermain.", "success");
       } catch (error) {
-        showFeedback(error instanceof Error ? error.message : "Request gagal", "error");
+        feedback(error instanceof Error ? error.message : "Impor gagal.", "error");
+      } finally {
+        busy = false;
+        if (button) button.disabled = false;
       }
     });
-
-    loadWorlds().catch((error) => {
-      showFeedback(error instanceof Error ? error.message : "Request gagal", "error");
+    if (new URLSearchParams(window.location.search).has("created"))
+      feedback("World disiapkan dan dipilih. Nyalakan server melalui Ringkasan atau Konsol untuk membuat dunianya.", "success");
+    load().catch((error) => {
+      if (list) list.textContent = "World gagal dimuat. Muat ulang halaman untuk mencoba kembali.";
+      feedback(error.message, "error");
     });
   </script>
 </DashboardShell>

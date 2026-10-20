@@ -9,14 +9,14 @@ import node from "@astrojs/node";
 const logger = createLogger();
 const originalWarn = logger.warn;
 
-logger.warn = (msg, options) => {
+/** @type {typeof logger.warn} */
+const filteredWarn = (msg, options) => {
   if (typeof msg === "string") {
     const isAstroUnusedExternalImportWarning =
-      msg.includes('"matchHostname", "matchPathname", "matchPort" and "matchProtocol"') &&
-      msg.includes("@astrojs/internal-helpers/remote");
+      msg.includes('"matchHostname", "matchPathname", "matchPort" and "matchProtocol"') && msg.includes("@astrojs/internal-helpers/remote");
 
     const isAstroNodeExternalizationWarning =
-      msg.includes("Module \"") &&
+      msg.includes('Module "') &&
       msg.includes("externalized for browser compatibility") &&
       (msg.includes("node_modules/@astrojs/node/") ||
         msg.includes("node_modules/astro/dist/core/app/node.js") ||
@@ -32,6 +32,8 @@ logger.warn = (msg, options) => {
 
   originalWarn(msg, options);
 };
+
+logger.warn = filteredWarn;
 
 // https://astro.build/config
 export default defineConfig({

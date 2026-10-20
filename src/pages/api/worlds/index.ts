@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { errorResponse, jsonResponse } from "../../../lib/http";
-import { activateWorld, deleteWorld, listWorlds, uploadWorld } from "../../../lib/packWorldManager";
+import { activateWorld, createWorld, deleteWorld, listWorlds, uploadWorld } from "../../../lib/packWorldManager";
 
 export const GET: APIRoute = async () => {
   return jsonResponse({ ok: true, worlds: await listWorlds() });
@@ -26,7 +26,11 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   try {
-    const payload = (await request.json()) as { worldName?: string };
+    const payload = (await request.json()) as { action?: string; settings?: Parameters<typeof createWorld>[0]; worldName?: string };
+    if (payload.action === "create") {
+      if (!payload.settings || typeof payload.settings !== "object") return errorResponse("Pengaturan world wajib diisi.", 400);
+      return jsonResponse({ ok: true, worlds: await createWorld(payload.settings) });
+    }
     const worldName = payload.worldName?.trim() ?? "";
     if (!worldName) {
       return errorResponse("worldName wajib diisi.", 400);

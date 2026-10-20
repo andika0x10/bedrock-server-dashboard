@@ -1,71 +1,56 @@
 ---
 import DashboardShell from "../../components/DashboardShell.astro";
+import Icon from "../../components/Icon.astro";
 ---
 
-<DashboardShell title="Kontrol Server | Bedrock Dashboard" activePath="/dashboard/server">
-  <section class="space-y-6">
-    <div id="feedback" class="hidden rounded-xl border border-[#2A2A2A] bg-[#1A1A1A] px-4 py-3 text-sm"></div>
-
-    <article class="rounded-2xl border border-[#2A2A2A] bg-[#1A1A1A] p-5 sm:p-6">
-      <h2 class="text-lg font-semibold text-[#FFFFFF]">Resource Host</h2>
-      <p class="mt-1 text-sm text-[#A0A0A0]">Pemantauan realtime CPU, RAM, dan Storage server host.</p>
-
-      <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div class="rounded-xl border border-[#2A2A2A] bg-[#0A0A0A] p-4">
-          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#666666]">CPU</p>
-          <p id="cpu-value" class="mt-2 text-2xl font-semibold text-[#FFFFFF]">0%</p>
-          <p id="cpu-sub" class="mt-1 text-xs text-[#A0A0A0]">Penggunaan saat ini</p>
-        </div>
-
-        <div class="rounded-xl border border-[#2A2A2A] bg-[#0A0A0A] p-4">
-          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#666666]">RAM</p>
-          <p id="ram-value" class="mt-2 text-2xl font-semibold text-[#FFFFFF]">0%</p>
-          <p id="ram-sub" class="mt-1 text-xs text-[#A0A0A0]">0 B / 0 B</p>
-        </div>
-
-        <div class="rounded-xl border border-[#2A2A2A] bg-[#0A0A0A] p-4 sm:col-span-2 lg:col-span-1">
-          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#666666]">Storage</p>
-          <p id="storage-value" class="mt-2 text-2xl font-semibold text-[#FFFFFF]">0%</p>
-          <p id="storage-sub" class="mt-1 text-xs text-[#A0A0A0]">0 B / 0 B</p>
-        </div>
-      </div>
-    </article>
-
-    <article class="rounded-2xl border border-[#2A2A2A] bg-[#1A1A1A] p-5 sm:p-6">
-      <h2 class="text-lg font-semibold text-[#FFFFFF]">Kontrol Server</h2>
-      <p class="mt-1 text-sm text-[#A0A0A0]">Gunakan tombol di bawah untuk Start, Stop, atau Restart server.</p>
-
-      <div class="mt-4 flex flex-wrap gap-3">
-        <button data-action="start" class="control-btn rounded-xl bg-[#F5F0E8] px-4 py-2 text-sm font-semibold text-[#0A0A0A] transition hover:bg-[#E8E0D0]">Start</button>
-        <button data-action="stop" class="control-btn rounded-xl border border-[#444444] bg-[#2A2A2A] px-4 py-2 text-sm font-semibold text-[#F5F5F5] transition hover:bg-[#444444]"
-          >Stop</button
-        >
-        <button
-          data-action="restart"
-          class="control-btn rounded-xl border border-[#444444] bg-[#2A2A2A] px-4 py-2 text-sm font-semibold text-[#F5F5F5] transition hover:bg-[#444444]">Restart</button
-        >
-      </div>
-
-      <form id="command-form" class="mt-5 flex flex-col gap-3 sm:flex-row">
-        <input
-          id="command-input"
-          name="command"
-          type="text"
-          placeholder="Contoh: say Server maintenance 5 menit"
-          class="w-full rounded-xl border border-[#2A2A2A] bg-[#0A0A0A] px-4 py-3 text-sm text-[#FFFFFF] outline-none transition focus:border-[#F5F0E8]"
-        />
-        <button type="submit" class="rounded-xl border border-[#2A2A2A] bg-[#2A2A2A] px-4 py-3 text-sm font-semibold text-[#F5F5F5] transition hover:bg-[#444444]"
-          >Kirim Command</button
-        >
-      </form>
-    </article>
-
-    <article class="rounded-2xl border border-[#2A2A2A] bg-[#1A1A1A] p-5 sm:p-6">
-      <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-[#666666]">Log Server</h3>
-      <pre id="server-logs" class="mt-3 max-h-[420px] overflow-auto rounded-xl border border-[#2A2A2A] bg-[#0A0A0A] p-3 text-xs text-[#A0A0A0]"></pre>
-    </article>
+<DashboardShell title="Konsol Server | Bedrock Dashboard" activePath="/dashboard/server">
+  <div id="feedback" class="hidden" role="status" aria-live="polite"></div>
+  <section class="console-metrics" aria-label="Sumber daya host">
+    {
+      [
+        { key: "cpu", label: "CPU host", icon: "cpu" },
+        { key: "ram", label: "Memori host", icon: "memory" },
+        { key: "storage", label: "Penyimpanan host", icon: "disk" },
+      ].map((item) => (
+        <article class="panel console-metric">
+          <>
+            <span class="row-icon purple">
+              <Icon name={item.icon} />
+            </span>
+            <div>
+              <>
+                <p>{item.label}</p>
+                <strong id={`${item.key}-value`}>—</strong>
+                <small id={`${item.key}-sub`}>Memuat penggunaan host…</small>
+              </>
+            </div>
+          </>
+        </article>
+      ))
+    }
   </section>
-
+  <article class="panel console-panel">
+    <div class="panel-heading">
+      <div><h2>Konsol langsung</h2><p class="muted text-xs mt-2 mb-0">Kirim perintah dan lihat apa yang terjadi di dalam server.</p></div><div class="console-controls">
+        <button data-action="start" class="control-btn btn btn-primary"><Icon name="play" size={14} />Nyalakan</button><button data-action="restart" class="control-btn btn"
+          >Restart</button
+        ><button data-action="stop" class="control-btn btn"><Icon name="stop" size={13} />Hentikan</button>
+      </div>
+    </div><pre id="server-logs" class="server-console" aria-label="Log server">Memuat log server…</pre><form id="command-form" class="command-form">
+      <label for="command-input" class="command-prompt" aria-label="Perintah konsol">›</label><input
+        id="command-input"
+        name="command"
+        type="text"
+        autocomplete="off"
+        aria-label="Perintah server"
+        placeholder="Contoh: say Halo semuanya!"
+        required
+      /><button type="submit" class="btn btn-primary">Kirim perintah</button>
+    </form><div class="command-help"><span>Tanpa tanda / di awal perintah.</span><span>Log diperbarui setiap 5 detik.</span></div>
+  </article>
+  <div class="notice mt-5">
+    Ingin mengizinkan teman masuk? Gunakan <code>allowlist add "Gamertag"</code> jika daftar pemain diaktifkan. Restart dan penghentian server akan memutus koneksi pemain.
+  </div>
   <script>
     const feedback = document.getElementById("feedback");
     const serverLogs = document.getElementById("server-logs");
@@ -105,11 +90,9 @@ import DashboardShell from "../../components/DashboardShell.astro";
     };
 
     function showFeedback(message: string, type: FeedbackType = "info") {
-      if (!(feedback instanceof HTMLElement)) {
-        return;
-      }
-      feedback.classList.remove("hidden", "text-[#A0A0A0]", "text-[#ff9e9e]", "text-[#F5F0E8]");
-      feedback.classList.add(type === "error" ? "text-[#ff9e9e]" : type === "success" ? "text-[#F5F0E8]" : "text-[#A0A0A0]");
+      if (!feedback) return;
+      feedback.className = "feedback";
+      feedback.dataset.type = type;
       feedback.textContent = message;
     }
 
@@ -190,6 +173,9 @@ import DashboardShell from "../../components/DashboardShell.astro";
           return;
         }
 
+        const controls = document.querySelectorAll<HTMLButtonElement>(".control-btn");
+        if (button instanceof HTMLButtonElement && button.disabled) return;
+        controls.forEach((control) => (control.disabled = true));
         try {
           showFeedback(`Menjalankan aksi ${action}...`);
           await api("/api/server/control", {
@@ -202,6 +188,8 @@ import DashboardShell from "../../components/DashboardShell.astro";
           showFeedback(`Aksi ${action} berhasil dijalankan.`, "success");
         } catch (error) {
           showFeedback(error instanceof Error ? error.message : "Request gagal", "error");
+        } finally {
+          controls.forEach((control) => (control.disabled = false));
         }
       });
     });
@@ -247,7 +235,9 @@ import DashboardShell from "../../components/DashboardShell.astro";
     }, 3000);
 
     setInterval(() => {
-      loadServerLogs().catch(() => {});
+      loadServerLogs().catch(() => {
+        if (serverLogs) serverLogs.textContent = "Log tidak dapat diperbarui. Periksa koneksi lalu muat ulang halaman.";
+      });
     }, 5000);
   </script>
 </DashboardShell>

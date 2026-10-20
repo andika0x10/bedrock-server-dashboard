@@ -1,0 +1,79 @@
+---
+import DashboardShell from "../../components/DashboardShell.astro";
+import Icon from "../../components/Icon.astro";
+---
+
+<DashboardShell title="World Baru | Bedrock Dashboard" activePath="/dashboard/setup">
+  <div id="feedback" class="hidden" role="status" aria-live="polite"></div>
+  <div class="notice">Dashboard ini mengelola satu server Bedrock. World baru akan menjadi world aktif. World lama tetap tersimpan. Hentikan server sebelum melanjutkan.</div>
+  <div class="setup-layout">
+    <form id="setup-form" class="panel">
+      <fieldset class="form-section">
+        <legend>Rumah untuk petualanganmu</legend><div class="form-grid">
+          <label class="field"
+            >Nama server<input name="server-name" required maxlength="80" placeholder="Contoh: Tempat Mabar" /><small>Nama yang terlihat oleh temanmu di daftar server.</small
+            ></label
+          >
+          <label class="field"
+            >Nama world<input name="level-name" required maxlength="80" pattern="[a-zA-Z0-9 _-]+" placeholder="Contoh: dunia-survival" /><small
+              >Gunakan huruf, angka, spasi, tanda - atau _. Nama harus berbeda dari world tersimpan.</small
+            ></label
+          >
+          <label class="field"
+            >Mode permainan<select name="gamemode"
+              ><option value="survival">Survival — kumpulkan dan bertahan</option><option value="creative">Creative — bebas membangun</option><option value="adventure"
+                >Adventure — jelajahi peta</option
+              ></select
+            ></label
+          >
+          <label class="field"
+            >Tingkat kesulitan<select name="difficulty"
+              ><option value="normal">Normal</option><option value="peaceful">Peaceful</option><option value="easy">Easy</option><option value="hard">Hard</option></select
+            ></label
+          >
+          <label class="field"
+            >Kapasitas pemain<input name="max-players" type="number" min="1" max="1000" value="10" required /><small>Sesuaikan dengan kemampuan host.</small></label
+          >
+          <label class="field">Seed world (opsional)<input name="level-seed" placeholder="Kosongkan untuk seed acak" /><small>Dipakai saat world pertama kali dibuat.</small></label
+          >
+        </div>
+      </fieldset>
+      <div class="form-actions">
+        <p>Pengaturan jaringan dan akses tetap mengikuti server saat ini.</p><button id="create-world" type="submit" class="btn btn-primary"
+          ><Icon name="plus" size={16} />Siapkan world</button>
+      </div>
+    </form>
+    <aside class="panel setup-help">
+      <span class="row-icon"><Icon name="world" /></span><h2 class="mt-5">Tiga langkah, siap mabar.</h2><ol>
+        <li>Tentukan nama dan cara bermain.</li><li>Nyalakan server untuk membuat world.</li><li>Bagikan alamat server ke teman.</li>
+      </ol><p>Sudah punya world? Impor file .mcworld melalui halaman World.</p><a class="btn" href="/dashboard/worlds">Buka koleksi world <Icon name="chevron" size={14} /></a><p
+        class="mt-5"
+      >
+        Binary Bedrock harus sudah terpasang pada host. Form ini menyiapkan world pada server yang tersedia.
+      </p>
+    </aside>
+  </div>
+  <script>
+    import { api, feedback } from "../../lib/client";
+    const form = document.querySelector<HTMLFormElement>("#setup-form");
+    const button = document.querySelector<HTMLButtonElement>("#create-world");
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!button || button.disabled) return;
+      button.disabled = true;
+      button.textContent = "Menyiapkan…";
+      try {
+        await api("/api/worlds", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "create", settings: Object.fromEntries(new FormData(form)) }),
+        });
+        window.location.href = "/dashboard/worlds?created=1";
+      } catch (error) {
+        feedback(error instanceof Error ? error.message : "World gagal disiapkan.", "error");
+        button.disabled = false;
+        button.textContent = "Siapkan world";
+      }
+    });
+  </script>
+</DashboardShell>
